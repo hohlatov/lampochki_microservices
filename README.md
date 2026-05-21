@@ -1,119 +1,111 @@
 # Лампочки — микросервисы
 
-Два независимых микросервиса на FastAPI + SQLite.
+Три независимых микросервиса на FastAPI + SQLite и панель управления (React).
 
 ```
-lampochki/
-├── products_service/   # порт 8000
-│   ├── main.py         # HTTP-слой (роуты)
-│   ├── service.py      # бизнес-логика
-│   ├── crud.py         # работа с БД
-│   ├── models.py       # SQLAlchemy-модели
-│   ├── schemas.py      # Pydantic-схемы
-│   ├── database.py     # подключение к БД
-│   └── requirements.txt
-└── orders_service/     # порт 8001
-    ├── main.py
-    ├── service.py      # бизнес-логика + взаимодействие с products_service
-    ├── crud.py
-    ├── models.py
-    ├── schemas.py
-    ├── database.py
-    ├── products_client.py  # HTTP-клиент для products_service
-    └── requirements.txt
+lampochki_microservices/
+├── auth_service/       # порт 8002 — JWT-аутентификация
+├── products_service/   # порт 8000 — товары
+└── orders_service/     # порт 8001 — заказы
 ```
 
 ---
 
 ## Запуск
 
-Сначала запустить products_service, затем orders_service.
+Запустите все три сервиса, затем frontend.
 
 ```bash
-# Терминал 1
+# Терминал 1 — аутентификация
+cd auth_service
+pip install -r requirements.txt
+uvicorn main:app --reload --port 8002
+
+# Терминал 2 — товары
 cd products_service
 pip install -r requirements.txt
 uvicorn main:app --reload --port 8000
 
-# Терминал 2
+# Терминал 3 — заказы
 cd orders_service
 pip install -r requirements.txt
 uvicorn main:app --reload --port 8001
+
+# Терминал 4 — панель управления (frontend)
+cd lampochki-frontend
+npm install
+npm run dev
 ```
 
 Swagger UI:
+- http://localhost:8002/docs — аутентификация
 - http://localhost:8000/docs — товары
 - http://localhost:8001/docs — заказы
 
+Frontend: http://localhost:5173
+
 ---
 
-## Архитектура взаимодействия
+## Учётные данные администратора
 
-При создании заказа (`POST /orders/`) orders_service:
+| Логин | Пароль   |
+|-------|----------|
+| admin | admin123 |
 
-1. Для каждого товара вызывает `GET /products/{id}` на порту 8000
-2. Получает **реальную цену** и **название** из products_service (клиент не передаёт цену)
-3. Проверяет `stock >= quantity`, иначе возвращает **409 Conflict**
-4. Уменьшает остаток через `PATCH /internal/products/{id}/stock`
-5. Сохраняет заказ с зафиксированной ценой на момент покупки
+Вход: http://localhost:5173/login → панель http://localhost:5173/admin
+
+---
+
+## JWT и авторизация
+
+1. **auth_service** (8002) — `POST /auth/login` или `POST /login` принимает `{ "login": "admin", "password": "admin123" }`, возвращает JWT.
+2. **products_service** (8000) — все `/admin/products*` требуют заголовок `Authorization: Bearer <token>`.
+3. **orders_service** (8001) — все `/admin/orders*` требуют тот же JWT.
+
+Публичные эндпоинты (без токена):
+- `GET /products`, `GET /products/{id}` — каталог
+- `POST /orders/` — оформление заказа клиентом
+
+---
+
+## Эндпоинты — аутентификация (порт 8002)
+
+| Метод | URL          | Описание              |
+|-------|--------------|-----------------------|
+| POST  | /login       | Получить JWT-токен    |
+| POST  | /auth/login  | Получить JWT-токен    |
 
 ---
 
 ## Эндпоинты — товары (порт 8000)
 
-| Метод  | URL                               | Описание                        |
-|--------|-----------------------------------|---------------------------------|
-| GET    | /products                         | Список всех товаров             |
-| GET    | /products/{id}                    | Товар по ID                     |
-| POST   | /products/                        | Создать товар                   |
-| PUT    | /products/{id}                    | Обновить товар                  |
-| DELETE | /products/{id}                    | Удалить товар                   |
-| PATCH  | /internal/products/{id}/stock     | Изменить остаток (внутренний)   |
-| GET    | /admin/products                   | Список товаров (админ)          |
-| POST   | /admin/products                   | Добавить товар (админ)          |
-| PUT    | /admin/products/{id}              | Изменить товар (админ)          |
-| DELETE | /admin/products/{id}              | Удалить товар (админ)           |
+| Метод  | URL                               | JWT | Описание                        |
+|--------|-----------------------------------|-----|---------------------------------|
+| GET    | /products                         | —   | Список всех товаров             |
+| GET    | /products/{id}                    | —   | Товар по ID                     |
+| PATCH  | /internal/products/{id}/stock     | —   | Изменить остаток (внутренний)   |
+| GET    | /admin/products                   | ✓   | Список товаров (админ)          |
+| POST   | /admin/products                   | ✓   | Добавить товар (админ)          |
+| PUT    | /admin/products/{id}              | ✓   | Изменить товар (админ)          |
+| DELETE | /admin/products/{id}              | ✓   | Удалить товар (админ)           |
 
 ---
 
 ## Эндпоинты — заказы (порт 8001)
 
-| Метод  | URL                        | Описание                    |
-|--------|----------------------------|-----------------------------|
-| POST   | /orders/                   | Создать заказ               |
-| GET    | /orders/                   | Список всех заказов         |
-| GET    | /orders/{id}               | Заказ по ID                 |
-| PUT    | /orders/{id}/status        | Изменить статус             |
-| GET    | /admin/orders/             | Список заказов (админ)      |
-| GET    | /admin/orders/{id}         | Детали заказа (админ)       |
-| PUT    | /admin/orders/{id}/status  | Обновить статус (админ)     |
-
----
-
-## Пример создания заказа
-
-```json
-POST http://localhost:8001/orders/
-{
-  "customer_name": "Иван Иванов",
-  "customer_phone": "+7 900 000-00-00",
-  "delivery_address": "Москва, ул. Ленина, д.1",
-  "payment_method": "card",
-  "items": [
-    { "product_id": "<uuid товара>", "quantity": 2 },
-    { "product_id": "<uuid товара>", "quantity": 1 }
-  ]
-}
-```
-
-Цена берётся автоматически из products_service.
+| Метод  | URL                        | JWT | Описание                    |
+|--------|----------------------------|-----|-----------------------------|
+| POST   | /orders/                   | —   | Создать заказ               |
+| GET    | /admin/orders/             | ✓   | Список заказов (админ)      |
+| GET    | /admin/orders/{id}         | ✓   | Детали заказа (админ)       |
+| PUT    | /admin/orders/{id}/status  | ✓   | Обновить статус (админ)     |
 
 ---
 
 ## Статусы заказа
 
-- `new`        — новый
+- `new` — новый
 - `processing` — в обработке
-- `shipped`    — отправлен
-- `delivered`  — доставлен
-- `cancelled`  — отменён
+- `shipped` — отправлен
+- `delivered` — доставлен
+- `cancelled` — отменён

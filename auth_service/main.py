@@ -18,6 +18,7 @@ app.add_middleware(
 
 
 @app.post("/login", response_model=schemas.TokenResponse)
+@app.post("/auth/login", response_model=schemas.TokenResponse)
 def login(data: schemas.LoginRequest):
 
     if not security.authenticate_user(
